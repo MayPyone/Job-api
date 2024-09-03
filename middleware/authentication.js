@@ -16,8 +16,7 @@ const auth = async (req, res, next) => {
   try {
     const payload = jwt.verify(token, process.env.JWTPRIVATEKEY, { algorithms: ['HS256'] });
     
-    req.user = { firstName: payload.firstName, email: payload.email };
-    // res.status(200).send({message: "Job in successfully" },req.user);
+    req.user = { firstName: payload.firstName, email: payload.email, userId: payload._id };
     
     next();
   } catch (error) {

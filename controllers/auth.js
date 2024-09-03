@@ -26,8 +26,8 @@ const register= async(req,res)=>{
         userId: user._id,    
         token: crypto.randomBytes(32).toString("hex"),
     }).save();
-    
-    const url = `${process.env.BASE_URL}users/${user.id}/verify/${token.token}`;
+
+   const url = `${process.env.BASE_URL}api/v1/auth/${user.id}/verify/${token.token}`;
     await sendEmail(user.email, "Verify Email", url);
 
     res
@@ -42,10 +42,71 @@ const register= async(req,res)=>{
 
 
 const login = async(req,res)=>{
-  res.status(StatusCodes.CREATED).json("Logged in successfully")
+  try {
+		const { error } = validate(req.body);
+		if (error)
+			return res.status(400).send({ message: error.details[0].message });
+
+		const user = await User.findOne({ email: req.body.email });
+		if (!user)
+			return res.status(401).send({ message: "Invalid Email or Password" });
+
+		const validPassword = await bcrypt.compare(
+			req.body.password,
+			user.password
+		);
+		if (!validPassword)
+			return res.status(401).send({ message: "Invalid Email or Password" });
+
+		if (!user.verified) {
+			let token = await Token.findOne({ userId: user._id });
+			if (!token) {
+				token = await new Token({
+					userId: user._id,
+					token: crypto.randomBytes(32).toString("hex"),
+				}).save();
+				const url = `${process.env.BASE_URL}users/${user.id}/verify/${token.token}`;
+				await sendEmail(user.email, "Verify Email", url);
+			}
+
+			return res
+				.status(400)
+				.send({ message: "An Email sent to your account please verify" });
+		}
+
+		const token = user.generateAuthToken();
+		res.status(200).send({ secret: process.env.JWTPRIVATEKEY, data: token, message: "logged in successfully" });
+	} catch (error) {
+		res.status(500).send({ message: "Internal Server Error" });
+	}
 }
+
+const verifiedEmail = async (req, res) => {
+    try {
+        const user = await User.findOne({ _id: req.params.id });
+        if (!user) return res.status(400).send({ message: "Invalid link" });
+
+        const token = await Token.findOne({
+            userId: user._id,
+            token: req.params.token,
+        });
+        if (!token) return res.status(400).send({ message: "Invalid link" });
+
+        await User.updateOne(
+            { _id: user._id }, // Correctly use the _id to identify the document
+            { $set: { verified: true } } // Only update the verified field
+        )
+       // await token.remove();
+
+        res.status(200).send({ message: "Email verified successfully" });
+    } catch (error) {
+		console.log("Error removing token:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+    }
+};
 
 module.exports={
     register,
-    login
+    login,
+	verifiedEmail
 }
